@@ -205,16 +205,16 @@ function showPopup(text) {
 
 // 장애물
 const OBS_TYPES = [
-  { label: '🚗', color: '#e74c3c', w: 64, h: 40, msg: '🚗 에너지 낭비!', energy: -25 },
-  { label: '🚙', color: '#c0392b', w: 60, h: 38, msg: '🚙 차량 충돌!', energy: -25 },
-  { label: '🚕', color: '#f39c12', w: 62, h: 39, msg: '🚕 택시도 기름 써요!', energy: -20 },
+  { type: 'car',  color: '#e74c3c', w: 64, h: 40, msg: '에너지 낭비!', energy: -25 },
+  { type: 'car2', color: '#c0392b', w: 60, h: 38, msg: '차량 충돌!', energy: -25 },
+  { type: 'car3', color: '#f39c12', w: 62, h: 39, msg: '택시도 기름 써요!', energy: -20 },
 ];
 // 보너스
 const BON_TYPES = [
-  { label: '🚌', color: '#27ae60', w: 80, h: 54, msg: '🚌 버스 탑승! +30점', score: 30, energy: 20 },
-  { label: '🚲', color: '#2ecc71', w: 64, h: 54, msg: '🚲 자전거! +20점', score: 20, energy: 15 },
-  { label: '🌿', color: '#1abc9c', w: 54, h: 54, msg: '🌿 절약 실천! +15점', score: 15, energy: 10 },
-  { label: '🚶', color: '#3498db', w: 48, h: 56, msg: '🚶 걷기 운동! +10점', score: 10, energy: 8 },
+  { type: 'bus',  label: '버스', color: '#27ae60', w: 80, h: 54, msg: '버스 탑승! +30점', score: 30, energy: 20 },
+  { type: 'bike', label: '자전거', color: '#2ecc71', w: 64, h: 54, msg: '자전거! +20점', score: 20, energy: 15 },
+  { type: 'leaf', label: '절약', color: '#1abc9c', w: 54, h: 54, msg: '절약 실천! +15점', score: 15, energy: 10 },
+  { type: 'walk', label: '걷기', color: '#3498db', w: 48, h: 56, msg: '걷기 운동! +10점', score: 10, energy: 8 },
 ];
 
 function spawnObstacle() {
@@ -373,27 +373,226 @@ function drawCharacter() {
   ctx.restore();
 }
 
+function drawCar(x, y, w, h, color) {
+  ctx.save();
+  // 차 본체
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.roundRect(x, y + h*0.35, w, h*0.65, 6); ctx.fill();
+  // 지붕
+  ctx.fillStyle = shadeColor(color, -20);
+  ctx.beginPath(); ctx.roundRect(x + w*0.12, y, w*0.76, h*0.5, 8); ctx.fill();
+  // 앞유리
+  ctx.fillStyle = 'rgba(150,220,255,0.7)';
+  ctx.beginPath(); ctx.roundRect(x + w*0.52, y + h*0.05, w*0.28, h*0.38, 4); ctx.fill();
+  // 뒷유리
+  ctx.fillStyle = 'rgba(150,220,255,0.7)';
+  ctx.beginPath(); ctx.roundRect(x + w*0.16, y + h*0.05, w*0.28, h*0.38, 4); ctx.fill();
+  // 바퀴
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(x + w*0.22, y+h, h*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w*0.78, y+h, h*0.22, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#666';
+  ctx.beginPath(); ctx.arc(x + w*0.22, y+h, h*0.11, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x + w*0.78, y+h, h*0.11, 0, Math.PI*2); ctx.fill();
+  // 헤드라이트
+  ctx.fillStyle = '#fffaaa';
+  ctx.beginPath(); ctx.ellipse(x+w-4, y+h*0.55, 5, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function shadeColor(color, amt) {
+  const num = parseInt(color.replace('#',''), 16);
+  const r = Math.min(255, Math.max(0, (num>>16)+amt));
+  const g = Math.min(255, Math.max(0, ((num>>8)&0xff)+amt));
+  const b = Math.min(255, Math.max(0, (num&0xff)+amt));
+  return '#' + ((r<<16)|(g<<8)|b).toString(16).padStart(6,'0');
+}
+
 function drawObstacle(o) {
   ctx.save();
-  ctx.font = '36px serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(o.label, o.x + o.w/2, o.y + o.h/2);
-  // 경고 테두리
-  ctx.strokeStyle = 'rgba(255,80,80,0.5)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(o.x, o.y, o.w, o.h);
+  drawCar(o.x, o.y, o.w, o.h, o.color);
+  ctx.restore();
+}
+
+function drawBus(x, y, w, h) {
+  ctx.save();
+  // 버스 본체
+  ctx.fillStyle = '#27ae60';
+  ctx.beginPath(); ctx.roundRect(x, y, w, h*0.82, 6); ctx.fill();
+  // 창문들
+  ctx.fillStyle = 'rgba(180,240,255,0.8)';
+  for(let i=0;i<3;i++) ctx.fillRect(x+6+i*(w*0.28), y+6, w*0.22, h*0.28);
+  // 앞유리
+  ctx.fillStyle = 'rgba(180,240,255,0.9)';
+  ctx.beginPath(); ctx.roundRect(x+w*0.72, y+4, w*0.22, h*0.35, 3); ctx.fill();
+  // 바퀴
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.arc(x+w*0.18, y+h*0.9, h*0.14, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+w*0.82, y+h*0.9, h*0.14, 0, Math.PI*2); ctx.fill();
+  // 별 아이콘
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + Math.floor(h*0.3) + 'px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('BUS', x+w/2, y+h*0.6);
+  ctx.restore();
+}
+
+function drawBike(x, y, w, h) {
+  ctx.save();
+  const cx = x + w/2, cy = y + h*0.65;
+  const r = Math.min(w, h) * 0.32;
+
+  [cx - r*1.05, cx + r*1.05].forEach((wx) => {
+    ctx.strokeStyle = '#1a5c2a'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(wx, cy, r, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = '#2ecc71'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(wx, cy, r, 0, Math.PI*2); ctx.stroke();
+    ctx.fillStyle = '#27ae60';
+    ctx.beginPath(); ctx.arc(wx, cy, 4, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(180,255,200,0.6)'; ctx.lineWidth = 1.5;
+    for(let s=0; s<6; s++){
+      const a = s * Math.PI/3;
+      ctx.beginPath();
+      ctx.moveTo(wx, cy);
+      ctx.lineTo(wx + Math.cos(a)*r*0.85, cy + Math.sin(a)*r*0.85);
+      ctx.stroke();
+    }
+  });
+
+  const lw = cx - r*1.05, rw = cx + r*1.05;
+  const top = cy - r*0.95, mid = cy - r*0.1;
+  ctx.strokeStyle = '#e8ff00'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(lw, cy);
+  ctx.lineTo(cx - r*0.1, top);
+  ctx.lineTo(rw, cy);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - r*0.1, top);
+  ctx.lineTo(cx - r*0.1, mid);
+  ctx.lineTo(lw, cy);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + r*0.55, top*0.6 + cy*0.4);
+  ctx.lineTo(rw, cy);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#aaffcc'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx + r*0.45, top*0.55 + cy*0.45);
+  ctx.lineTo(cx + r*0.45, top*0.3 + cy*0.7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + r*0.2, top*0.3 + cy*0.7);
+  ctx.lineTo(cx + r*0.7, top*0.3 + cy*0.7);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#aaffcc'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx - r*0.35, top + 4);
+  ctx.lineTo(cx + r*0.05, top + 4);
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(cx - r*0.05, mid + 4, 5, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawLeaf(x, y, w, h) {
+  ctx.save();
+  const cx = x + w/2, cy = y + h/2;
+
+  // 빛나는 후광
+  const grd = ctx.createRadialGradient(cx, cy, 4, cx, cy, w*0.6);
+  grd.addColorStop(0, 'rgba(100,255,120,0.6)');
+  grd.addColorStop(1, 'rgba(39,174,96,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(cx, cy, w*0.6, 0, Math.PI*2); ctx.fill();
+
+  // 잎 3장 (겹쳐서 풍성하게)
+  const leafData = [
+    {ox: 0,       oy: -h*0.05, angle: 0},
+    {ox: -w*0.18, oy:  h*0.1,  angle: -0.5},
+    {ox:  w*0.18, oy:  h*0.1,  angle:  0.5},
+  ];
+  leafData.forEach(({ox, oy, angle}) => {
+    ctx.save();
+    ctx.translate(cx+ox, cy+oy);
+    ctx.rotate(angle);
+    // 잎 몸통
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath();
+    ctx.moveTo(0, -h*0.38);
+    ctx.bezierCurveTo( w*0.28, -h*0.2,  w*0.28,  h*0.15, 0,  h*0.3);
+    ctx.bezierCurveTo(-w*0.28,  h*0.15, -w*0.28, -h*0.2, 0, -h*0.38);
+    ctx.fill();
+    // 잎 테두리
+    ctx.strokeStyle = '#1a8a40'; ctx.lineWidth = 1.5;
+    ctx.stroke();
+    // 중앙 잎맥
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, -h*0.3); ctx.lineTo(0, h*0.22); ctx.stroke();
+    // 옆 잎맥
+    ctx.lineWidth = 1; ctx.globalAlpha = 0.35;
+    [-1,1].forEach(side => {
+      ctx.beginPath();
+      ctx.moveTo(0, -h*0.1);
+      ctx.lineTo(side*w*0.18, h*0.08);
+      ctx.stroke();
+    });
+    ctx.restore();
+  });
+
+  // 반짝임 별
+  ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8;
+  [[cx-w*0.2, cy-h*0.3], [cx+w*0.25, cy-h*0.15]].forEach(([sx,sy]) => {
+    ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+function drawWalker(x, y, w, h) {
+  ctx.save();
+  const cx = x+w/2;
+  // 머리
+  ctx.fillStyle = '#3498db';
+  ctx.beginPath(); ctx.arc(cx, y+h*0.15, h*0.13, 0, Math.PI*2); ctx.fill();
+  // 몸통
+  ctx.strokeStyle = '#2980b9'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx, y+h*0.28); ctx.lineTo(cx, y+h*0.6); ctx.stroke();
+  // 팔
+  const armSwing = Math.sin(frame*0.15)*0.2;
+  ctx.beginPath();
+  ctx.moveTo(cx, y+h*0.38);
+  ctx.lineTo(cx-w*0.25, y+h*0.55+armSwing*h);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, y+h*0.38);
+  ctx.lineTo(cx+w*0.25, y+h*0.55-armSwing*h);
+  ctx.stroke();
+  // 다리
+  const legSwing = Math.sin(frame*0.15)*0.15;
+  ctx.beginPath();
+  ctx.moveTo(cx, y+h*0.6);
+  ctx.lineTo(cx-w*0.2, y+h*0.85+legSwing*h);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, y+h*0.6);
+  ctx.lineTo(cx+w*0.2, y+h*0.85-legSwing*h);
+  ctx.stroke();
   ctx.restore();
 }
 
 function drawBonus(b) {
   ctx.save();
-  const glow = Math.sin(frame * 0.12) * 0.2 + 0.85;
+  const glow = Math.sin(frame * 0.12) * 0.15 + 0.9;
   ctx.globalAlpha = glow;
-  ctx.font = Math.floor(b.h * 0.8) + 'px serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(b.label, b.x + b.w/2, b.y + b.h/2);
+  if (b.type === 'bus') drawBus(b.x, b.y, b.w, b.h);
+  else if (b.type === 'bike') drawBike(b.x, b.y, b.w, b.h);
+  else if (b.type === 'leaf') drawLeaf(b.x, b.y, b.w, b.h);
+  else if (b.type === 'walk') drawWalker(b.x, b.y, b.w, b.h);
   ctx.globalAlpha = 1;
   ctx.restore();
 }
