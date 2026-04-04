@@ -419,10 +419,11 @@ let frame = 0;
 let speed = 3.5;
 let timeLeft = GAME_TIME;
 let lastSecond = 0;
-let obstacles = [], bonuses = [], particles = [];
+let obstacles = [], bonuses = [], particles = [], petals = [];
 let popupTimer = 0;
 let earlyEnd = false;
 let survivalTime = 0;
+let gameStartTime = 0;
 
 // 랭킹 UI 업데이트 (결과화면 + 시작화면 모달 공통)
 function updateRankingUI(debugMsg) {
@@ -575,8 +576,11 @@ document.getElementById('muteBtn').addEventListener('touchstart', function(e) { 
 
 function startGame() {
   score = 0; survivalTime = 0; energy = 100; frame = 0; speed = 3.5;
+  gameStartTime = performance.now();
   timeLeft = GAME_TIME; lastSecond = 0;
-  obstacles = []; bonuses = []; particles = [];
+  obstacles = []; bonuses = []; particles = []; petals = [];
+  // 벚꽃 초기 생성
+  for (let i = 0; i < 18; i++) spawnPetal(true);
   CHAR.y = CHAR.groundY; CHAR.vy = 0; CHAR.jumps = 0; CHAR.legPhase = 0;
   bgX = 0;
   earlyEnd = false;
@@ -625,8 +629,8 @@ function drawCharacter() {
   // 달리기 애니메이션: 위아래 통통 튀기 + 좌우 살짝 기울기
   const bob   = CHAR.jumps === 0 ? Math.sin(lp * 2) * 3 : 0;
   const tilt  = CHAR.jumps === 0 ? Math.sin(lp * 2) * 0.06 : -0.12;
-  const drawW = 72;
-  const drawH = 54;
+  const drawW = 120;
+  const drawH = 90;
   const drawX = x + (w - drawW) / 2;
   const drawY = y + (h - drawH) / 2 + bob;
 
@@ -763,6 +767,32 @@ function drawBike(x, y, w, h) {
   ctx.lineTo(cx + r*0.7, top*0.3 + cy*0.7);
   ctx.stroke();
 
+  // 핸들바 기둥: 앞바퀴(rw) 위쪽에서 올라옴
+  const handleX = rw;
+  const handleBotY = cy - r;        // 앞바퀴 꼭대기
+  const handleTopY = cy - r*1.5;    // 거기서 위로
+  ctx.strokeStyle = '#e8ff00'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(handleX, handleBotY);
+  ctx.lineTo(handleX, handleTopY);
+  ctx.stroke();
+  // 핸들바 (가로, 양쪽으로 뻗음)
+  ctx.strokeStyle = '#aaffcc'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(handleX - r*0.35, handleTopY);
+  ctx.lineTo(handleX + r*0.35, handleTopY);
+  ctx.stroke();
+  // 양 끝 살짝 아래로
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(handleX - r*0.35, handleTopY);
+  ctx.lineTo(handleX - r*0.35, handleTopY + r*0.15);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(handleX + r*0.35, handleTopY);
+  ctx.lineTo(handleX + r*0.35, handleTopY + r*0.15);
+  ctx.stroke();
+
   ctx.strokeStyle = '#aaffcc'; ctx.lineWidth = 4;
   ctx.beginPath();
   ctx.moveTo(cx - r*0.35, top + 4);
@@ -771,7 +801,7 @@ function drawBike(x, y, w, h) {
 
   // 안장
   const saddleX = cx - r*0.1;
-  const saddleY = top - r*0.08;
+  const saddleY = top - r*0.45;
   ctx.fillStyle = '#5a3010';
   ctx.beginPath();
   ctx.ellipse(saddleX, saddleY, r*0.28, r*0.1, 0, 0, Math.PI*2);
@@ -931,6 +961,52 @@ function drawParticles() {
   });
 }
 
+function spawnPetal(init) {
+  petals.push({
+    x: Math.random() * W,
+    y: init ? Math.random() * H : -10,
+    size: 4 + Math.random() * 5,
+    speedX: -1.5 - Math.random() * 1.5,   // 왼쪽으로 살짝 흘러가는 느낌
+    speedY: 0.8 + Math.random() * 1.2,
+    rot: Math.random() * Math.PI * 2,
+    rotSpeed: (Math.random() - 0.5) * 0.08,
+    sway: Math.random() * Math.PI * 2,     // 좌우 살랑살랑
+    swaySpeed: 0.02 + Math.random() * 0.02,
+    alpha: 0.5 + Math.random() * 0.5,
+  });
+}
+
+function drawPetal(p) {
+  ctx.save();
+  ctx.globalAlpha = p.alpha;
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.rot);
+  // 꽃잎 모양 (타원 2개 겹쳐서 하트형)
+  ctx.fillStyle = '#ffb7c5';
+  ctx.beginPath();
+  ctx.ellipse(0, -p.size*0.3, p.size*0.55, p.size, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,220,230,0.7)';
+  ctx.beginPath();
+  ctx.ellipse(0, -p.size*0.3, p.size*0.3, p.size*0.7, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function updatePetals(dt) {
+  // 새 꽃잎 간헐적 생성
+  if (Math.random() < 0.08 * dt) spawnPetal(false);
+
+  petals = petals.filter(p => {
+    p.sway += p.swaySpeed * dt;
+    p.x += (p.speedX + Math.sin(p.sway) * 0.8) * dt;
+    p.y += p.speedY * dt;
+    p.rot += p.rotSpeed * dt;
+    return p.y < H + 20 && p.x > -20;
+  });
+}
+
+
 function collides(a, b) {
   const m = 10;
   return a.x+m < b.x+b.w-m && a.x+CHAR.w-m > b.x+m &&
@@ -1060,7 +1136,7 @@ function loop(timestamp) {
   }
 
   // 생존시간
-  survivalTime = GAME_TIME - timeLeft;
+  survivalTime = (performance.now() - gameStartTime) / 1000;
 
   updateHUD();
 
@@ -1073,6 +1149,8 @@ function loop(timestamp) {
   bonuses.forEach(drawBonus);
   drawParticles();
   drawCharacter();
+  updatePetals(dt);
+  petals.forEach(drawPetal);
 
   requestAnimationFrame(loop);
 }
