@@ -788,9 +788,7 @@ function drawBike(x, y, w, h) {
   ctx.fillStyle = '#fff';
   ctx.beginPath(); ctx.arc(cx - r*0.05, mid + 4, 5, 0, Math.PI*2); ctx.fill();
   ctx.restore();
-}
-
-function drawLeaf(x, y, w, h) {
+}(x, y, w, h) {
   ctx.save();
   const cx = x + w/2, cy = y + h/2;
 
