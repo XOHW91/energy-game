@@ -629,8 +629,8 @@ function drawCharacter() {
   // 달리기 애니메이션: 위아래 통통 튀기 + 좌우 살짝 기울기
   const bob   = CHAR.jumps === 0 ? Math.sin(lp * 2) * 3 : 0;
   const tilt  = CHAR.jumps === 0 ? Math.sin(lp * 2) * 0.06 : -0.12;
-  const drawW = 110;
-  const drawH = 80;
+  const drawW = 90;
+  const drawH = 60;
   const drawX = x + (w - drawW) / 2;
   const drawY = y + (h - drawH) / 2 + bob;
 
