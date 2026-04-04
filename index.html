@@ -475,11 +475,11 @@ document.getElementById('closeHallBtn').addEventListener('touchstart', function(
 
 // 캐릭터
 const CHAR = {
-  x: 80, y: GROUND_Y - 36,
-  w: 48, h: 36,
+  x: 80, y: GROUND_Y - 18,
+  w: 24, h: 18,
   vy: 0,
   jumps: 0,
-  groundY: GROUND_Y - 36,
+  groundY: GROUND_Y - 18,
   legPhase: 0,
 };
 
@@ -625,8 +625,8 @@ function drawCharacter() {
   // 달리기 애니메이션: 위아래 통통 튀기 + 좌우 살짝 기울기
   const bob   = CHAR.jumps === 0 ? Math.sin(lp * 2) * 3 : 0;
   const tilt  = CHAR.jumps === 0 ? Math.sin(lp * 2) * 0.06 : -0.12;
-  const drawW = 36;
-  const drawH = 26;
+  const drawW = 18;
+  const drawH = 13;
   const drawX = x + (w - drawW) / 2;
   const drawY = y + (h - drawH) / 2 + bob - 14;
 
