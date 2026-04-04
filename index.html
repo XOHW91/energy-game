@@ -201,45 +201,56 @@
   }
 </style>
 
-  <!-- Firebase REST API (SDK 없이 fetch로 직접 통신) -->
+  <!-- Firebase Compat SDK (WebSocket 통신, module import 불필요) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <script>
-    const DB_URL = 'https://siheung-game-default-rtdb.firebaseio.com/energyGame/ranking';
+    const firebaseConfig = {
+      apiKey: "AIzaSyB0ndsyoAkBP1FGX_-Xh5oPDPy5kdZ7oRQ",
+      authDomain: "siheung-game.firebaseapp.com",
+      databaseURL: "https://siheung-game-default-rtdb.firebaseio.com",
+      projectId: "siheung-game",
+      storageBucket: "siheung-game.firebasestorage.app",
+      messagingSenderId: "773678962442",
+      appId: "1:773678962442:web:c1b316bf4c000923f94cf3",
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    const rankRef = db.ref('energyGame/ranking');
+
+    window.firebaseReady = true;
 
     // 랭킹 불러오기
     async function loadRanking() {
-      // 로딩 표시
       ['rankingResult','startRankingResult'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:13px;padding:16px 0;text-align:center;">⏳ 불러오는 중...</div>';
+        if (el) el.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:12px;padding:16px 0;text-align:center;">⏳ 불러오는 중...</div>';
       });
-
       try {
-        const res = await fetch(`${DB_URL}.json`);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-
-        if (!data || typeof data !== 'object') {
+        const snap = await rankRef.orderByChild('score').limitToLast(10).once('value');
+        if (!snap.exists()) {
           window.rankingData = [];
         } else {
-          const arr = Object.values(data).filter(v => v && typeof v.score === 'number');
+          const arr = [];
+          snap.forEach(child => arr.push(child.val()));
           arr.sort((a, b) => b.score - a.score);
           window.rankingData = arr.slice(0, 3);
         }
+        window.updateRankingUI?.();
       } catch(e) {
-        console.log('랭킹 로드 실패:', e);
+        console.error('랭킹 로드 실패:', e);
         window.rankingData = [];
+        window.updateRankingUI?.('오류: ' + e.message);
       }
-      window.updateRankingUI?.();
     }
 
     // 점수 등록 시도
     window.trySubmitScore = async function(score) {
       await loadRanking(); // 최신 랭킹 갱신
-
       const ranking = window.rankingData || [];
       const lowestScore = ranking.length > 0 ? ranking[ranking.length - 1].score : 0;
       const isTop3 = ranking.length < 3 || score > lowestScore;
-
       if (!isTop3) { window.updateRankingUI?.(); return; }
 
       // 팝업 표시
@@ -256,21 +267,17 @@
         popup.classList.remove('show');
         try {
           const now = new Date();
-          await fetch(`${DB_URL}.json`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              dept: dept.slice(0, 12),
-              name: name.slice(0, 6),
-              score: score,
-              date: now.toLocaleDateString('ko-KR'),
-              datetime: now.toLocaleString('ko-KR')
-            })
+          await rankRef.push({
+            dept: dept.slice(0, 12),
+            name: name.slice(0, 6),
+            score: score,
+            date: now.toLocaleDateString('ko-KR'),
+            datetime: now.toLocaleString('ko-KR')
           });
           await loadRanking();
         } catch(e) {
           console.log('저장 실패', e);
-          window.updateRankingUI?.();
+          window.updateRankingUI?.('저장 오류: ' + e.message);
         }
       };
 
@@ -281,7 +288,6 @@
       };
     };
 
-    window.firebaseReady = true;
     window.loadRanking = loadRanking;
   </script>
 </head>
@@ -405,13 +411,16 @@ let earlyEnd = false;
 let survivalTime = 0;
 
 // 랭킹 UI 업데이트 (결과화면 + 시작화면 모달 공통)
-function updateRankingUI() {
+function updateRankingUI(debugMsg) {
   const medals = ['🥇','🥈','🥉'];
   const data = window.rankingData || [];
 
   function buildHTML(data) {
     if (data.length === 0) {
-      return '<div style="color:rgba(255,255,255,0.5);font-size:13px;text-align:center;padding:10px 0;">아직 기록이 없어요! 🎮</div>';
+      const errLine = debugMsg
+        ? `<div style="color:rgba(255,120,80,0.8);font-size:10px;margin-top:6px;">${debugMsg}</div>`
+        : '';
+      return `<div style="color:rgba(255,255,255,0.5);font-size:13px;text-align:center;padding:10px 0;">아직 기록이 없어요! 🎮</div>${errLine}`;
     }
     return data.map((r, i) => `
       <div style="display:flex;justify-content:space-between;align-items:center;
@@ -425,11 +434,8 @@ function updateRankingUI() {
     `).join('');
   }
 
-  // 결과 화면 랭킹
   const el = document.getElementById('rankingResult');
   if (el) el.innerHTML = buildHTML(data);
-
-  // 시작 화면 모달 랭킹
   const el2 = document.getElementById('startRankingResult');
   if (el2) el2.innerHTML = buildHTML(data);
 }
@@ -538,6 +544,7 @@ function startGame() {
   CHAR.y = CHAR.groundY; CHAR.vy = 0; CHAR.jumps = 0; CHAR.legPhase = 0;
   bgX = 0;
   earlyEnd = false;
+  _lastLoopTime = 0;
   state = 'playing';
   document.getElementById('startScreen').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'none';
@@ -887,7 +894,6 @@ function drawBackground() {
     grad.addColorStop(0,'#87CEEB'); grad.addColorStop(1,'#cce8ff');
     ctx.fillStyle = grad; ctx.fillRect(0,0,W,H*0.82);
   }
-  bgX -= speed * 0.5;
 }
 
 function drawGround() {
@@ -956,7 +962,7 @@ function gameOver(byTime) {
   }
 }
 
-function drawStartBg() {
+function drawStartBg(ts) {
   if (state !== 'start') return;
   ctx.clearRect(0,0,W,H);
   if (panoramaImg.complete && panoramaImg.naturalWidth > 0) {
@@ -968,35 +974,41 @@ function drawStartBg() {
   requestAnimationFrame(drawStartBg);
 }
 
-function loop() {
+let _lastLoopTime = 0;
+
+function loop(timestamp) {
   if (state !== 'playing') return;
+
+  // 델타타임 계산 (60fps 기준 정규화: 60fps=1.0, 120fps=1.0, 30fps=1.0)
+  const raw = _lastLoopTime ? (timestamp - _lastLoopTime) / (1000 / 60) : 1;
+  const dt = Math.min(raw, 3); // 탭 전환 등 큰 점프 방지
+  _lastLoopTime = timestamp;
+
   frame++;
 
-  // 시간 감소 (60fps 기준)
-  timeLeft -= 1/60;
+  // 시간 감소
+  timeLeft -= (1/60) * dt;
   if (timeLeft <= 0) { timeLeft = 0; updateHUD(); gameOver(true); return; }
 
   // 속도 점진적 증가
   speed = 3.5 + (GAME_TIME - timeLeft) * 0.07;
-
-  // 배경 전환 (6초마다)
 
   // 스폰
   const interval = Math.max(50, 110 - speed * 6);
   if (frame % Math.floor(interval) === 0) spawnObstacle();
   if (frame % Math.floor(interval * 1.4) === 0) spawnBonus();
 
-  // 물리
-  CHAR.vy += 0.65;
-  CHAR.y += CHAR.vy;
+  // 물리 (dt 적용)
+  CHAR.vy += 0.65 * dt;
+  CHAR.y += CHAR.vy * dt;
   if (CHAR.y >= CHAR.groundY) {
     CHAR.y = CHAR.groundY; CHAR.vy = 0; CHAR.jumps = 0;
   }
-  if (!CHAR.jumps) CHAR.legPhase += 0.22;
+  if (!CHAR.jumps) CHAR.legPhase += 0.22 * dt;
 
   // 장애물
   obstacles = obstacles.filter(o => {
-    o.x -= speed;
+    o.x -= speed * dt;
     if (collides(CHAR, o)) {
       energy = Math.max(0, energy + o.energy);
       showPopup(o.msg);
@@ -1009,7 +1021,7 @@ function loop() {
 
   // 보너스
   bonuses = bonuses.filter(b => {
-    b.x -= speed;
+    b.x -= speed * dt;
     if (collides(CHAR, b)) {
       energy = Math.min(100, energy + b.energy);
       score += b.score;
@@ -1022,22 +1034,23 @@ function loop() {
 
   // 파티클
   particles = particles.filter(p => {
-    p.x+=p.vx; p.y+=p.vy; p.vy+=0.15; p.life--;
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 0.15 * dt; p.life -= dt;
     return p.life > 0;
   });
 
   // 팝업
   if (popupTimer > 0) {
-    popupTimer--;
-    if (popupTimer === 0) document.getElementById('msgPopup').style.opacity = '0';
+    popupTimer -= dt;
+    if (popupTimer <= 0) document.getElementById('msgPopup').style.opacity = '0';
   }
 
-  // 생존시간 실시간 반영 (매 프레임)
+  // 생존시간
   survivalTime = GAME_TIME - timeLeft;
 
   updateHUD();
 
   // 렌더링
+  bgX -= speed * 0.5 * dt;
   ctx.clearRect(0,0,W,H);
   drawBackground();
   drawGround();
