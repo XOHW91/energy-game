@@ -20,31 +20,18 @@
     -webkit-user-select: none; user-select: none;
   }
   #gameWrapper {
-    position: relative; width: 480px; height: 640px;
+    position: fixed;
+    width: 480px; height: 640px;
     overflow: hidden; border-radius: 16px;
     box-shadow: 0 0 40px rgba(0,0,0,0.6);
     touch-action: none;
+    transform-origin: top left;
   }
   @media (max-width: 500px) {
-    #gameWrapper {
-      width: 100vw;
-      height: 100vh;
-      height: 100dvh;
-      border-radius: 0;
-    }
-    canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      height: 100dvh !important;
-    }
+    #gameWrapper { border-radius: 0; }
   }
   canvas { display:block; width:480px; height:640px; }
   #ui { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
-
-  /* 모바일 캔버스 스케일링 */
-  @media (max-width: 500px) {
-    canvas { width:100vw !important; height:100vh !important; height:100dvh !important; }
-  }
 
   #hud {
     position:absolute; top:12px; left:0; right:0;
@@ -214,46 +201,45 @@
   }
 </style>
 
-  <!-- Firebase -->
-  <script type="module">
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-    import { getDatabase, ref, get, set, push, query, orderByChild, limitToLast }
-      from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+  <!-- Firebase REST API (SDK 없이 fetch로 직접 통신) -->
+  <script>
+    const DB_URL = 'https://siheung-game-default-rtdb.firebaseio.com/energyGame/ranking';
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyB0ndsyoAkBP1FGX_-Xh5oPDPy5kdZ7oRQ",
-      authDomain: "siheung-game.firebaseapp.com",
-      databaseURL: "https://siheung-game-default-rtdb.firebaseio.com",
-      projectId: "siheung-game",
-      storageBucket: "siheung-game.firebasestorage.app",
-      messagingSenderId: "773678962442",
-      appId: "1:773678962442:web:c1b316bf4c000923f94cf3",
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    const rankRef = ref(db, 'energyGame/ranking');
-
-    window.firebaseReady = true;
-
-    // TOP3 불러오기
+    // 랭킹 불러오기
     async function loadRanking() {
+      // 로딩 표시
+      ['rankingResult','startRankingResult'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:13px;padding:16px 0;text-align:center;">⏳ 불러오는 중...</div>';
+      });
+
       try {
-        const snap = await get(query(rankRef, orderByChild('score'), limitToLast(10)));
-        if (!snap.exists()) { window.rankingData = []; window.updateRankingUI?.(); return; }
-        const arr = [];
-        snap.forEach(child => arr.push(child.val()));
-        // 내림차순 정렬 후 TOP3
-        arr.sort((a, b) => b.score - a.score);
-        window.rankingData = arr.slice(0, 3);
-        window.updateRankingUI?.();
-      } catch(e) { console.log('랭킹 로드 실패', e); }
+        const res = await fetch(`${DB_URL}.json`);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+
+        if (!data || typeof data !== 'object') {
+          window.rankingData = [];
+        } else {
+          const arr = Object.values(data).filter(v => v && typeof v.score === 'number');
+          arr.sort((a, b) => b.score - a.score);
+          window.rankingData = arr.slice(0, 3);
+        }
+      } catch(e) {
+        console.log('랭킹 로드 실패:', e);
+        window.rankingData = [];
+      }
+      window.updateRankingUI?.();
     }
 
     // 점수 등록 시도
     window.trySubmitScore = async function(score) {
+      await loadRanking(); // 최신 랭킹 갱신
+
       const ranking = window.rankingData || [];
-      const isTop3 = ranking.length < 3 || score > ranking[ranking.length - 1].score;
+      const lowestScore = ranking.length > 0 ? ranking[ranking.length - 1].score : 0;
+      const isTop3 = ranking.length < 3 || score > lowestScore;
+
       if (!isTop3) { window.updateRankingUI?.(); return; }
 
       // 팝업 표시
@@ -261,7 +247,7 @@
       popup.classList.add('show');
       document.getElementById('deptInput').value = '';
       document.getElementById('nameInput').value = '';
-      document.getElementById('deptInput').focus();
+      setTimeout(() => document.getElementById('deptInput').focus(), 300);
 
       // 등록 버튼
       document.getElementById('submitScoreBtn').onclick = async () => {
@@ -270,16 +256,22 @@
         popup.classList.remove('show');
         try {
           const now = new Date();
-          await push(rankRef, {
-            dept: dept.slice(0,12),
-            name: name.slice(0,6),
-            score: score,
-            date: now.toLocaleDateString('ko-KR'),
-            time: now.toLocaleTimeString('ko-KR'),
-            datetime: now.toLocaleString('ko-KR')
+          await fetch(`${DB_URL}.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dept: dept.slice(0, 12),
+              name: name.slice(0, 6),
+              score: score,
+              date: now.toLocaleDateString('ko-KR'),
+              datetime: now.toLocaleString('ko-KR')
+            })
           });
           await loadRanking();
-        } catch(e) { console.log('저장 실패', e); window.updateRankingUI?.(); }
+        } catch(e) {
+          console.log('저장 실패', e);
+          window.updateRankingUI?.();
+        }
       };
 
       // 건너뛰기
@@ -289,8 +281,8 @@
       };
     };
 
+    window.firebaseReady = true;
     window.loadRanking = loadRanking;
-    loadRanking();
   </script>
 </head>
 <body>
@@ -365,32 +357,25 @@
 </div>
 
 <script>
-// 모바일 화면에 맞게 캔버스 크기 동적 조절
-(function() {
-  function resizeGame() {
-    const wrapper = document.getElementById('gameWrapper');
-    const canvas = document.getElementById('c');
-    if (!wrapper || !canvas) return;
-    if (window.innerWidth <= 500) {
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const scale = Math.min(vw / 480, vh / 640);
-      wrapper.style.width = (480 * scale) + 'px';
-      wrapper.style.height = (640 * scale) + 'px';
-      canvas.style.width = (480 * scale) + 'px';
-      canvas.style.height = (640 * scale) + 'px';
-    }
-  }
-  window.addEventListener('resize', resizeGame);
-  window.addEventListener('orientationchange', function() {
-    setTimeout(resizeGame, 200);
-  });
-  document.addEventListener('DOMContentLoaded', resizeGame);
-})();
-// 스크롤 & 핀치줌 방지
-document.addEventListener('touchmove', function(e) {
-  e.preventDefault();
-}, { passive: false });
+// transform:scale() 로 게임 wrapper를 화면에 맞게 스케일
+function scaleGame() {
+  const wrapper = document.getElementById('gameWrapper');
+  if (!wrapper) return;
+  const W = 480, H = 640;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const scale = Math.min(vw / W, vh / H);
+  const left = (vw - W * scale) / 2;
+  const top  = (vh - H * scale) / 2;
+  wrapper.style.transform = `scale(${scale})`;
+  wrapper.style.left = left + 'px';
+  wrapper.style.top  = top  + 'px';
+}
+window.addEventListener('resize', scaleGame);
+window.addEventListener('orientationchange', function() { setTimeout(scaleGame, 200); });
+document.addEventListener('DOMContentLoaded', scaleGame);
+// 스크롤·핀치줌 방지
+document.addEventListener('touchmove', function(e) { e.preventDefault(); }, { passive: false });
 </script>
 
 <script>
@@ -453,12 +438,12 @@ window.updateRankingUI = updateRankingUI;
 // 명예의전당 버튼
 document.getElementById('hallBtn').addEventListener('click', function() {
   document.getElementById('hallModal').classList.add('show');
-  updateRankingUI();
+  if (window.loadRanking) window.loadRanking();
 });
 document.getElementById('hallBtn').addEventListener('touchstart', function(e) {
   e.stopPropagation();
   document.getElementById('hallModal').classList.add('show');
-  updateRankingUI();
+  if (window.loadRanking) window.loadRanking();
 }, { passive: true });
 document.getElementById('closeHallBtn').addEventListener('click', function() {
   document.getElementById('hallModal').classList.remove('show');
@@ -1072,6 +1057,10 @@ function bindBtn(id) {
 bindBtn('startBtn');
 bindBtn('restartBtn');
 drawStartBg();
+scaleGame();
+
+// 페이지 로드 완료 후 랭킹 불러오기
+if (window.loadRanking) window.loadRanking();
 </script>
 </body>
 </html>
