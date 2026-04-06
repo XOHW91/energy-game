@@ -231,22 +231,105 @@
 
     window.firebaseReady = true;
 
+    // ─────────────────────────────────────────────
+    // TOP3 고정 키 구조: ranking/top1, top2, top3
+    // ─────────────────────────────────────────────
+    const TOP_KEYS = ['top1', 'top2', 'top3'];
+
+    // DB에서 top1/top2/top3 읽기
+    async function fetchTop3() {
+      const result = [];
+      for (const key of TOP_KEYS) {
+        const snap = await db.ref('energyGame/ranking/' + key).once('value');
+        if (snap.exists()) result.push({ key, ...snap.val() });
+      }
+      return result; // 이미 순서대로 저장돼 있으므로 정렬 불필요
+    }
+
+    // TOP3 배열을 점수 내림차순 정렬 후 top1/top2/top3에 저장
+    async function saveTop3(arr) {
+      // 점수 내림차순, 동점이면 기존 기록 우선 (나중에 들어온 게 밀림)
+      arr.sort((a, b) => b.score - a.score);
+      const top = arr.slice(0, 3);
+
+      // 기존 top1/top2/top3 전체 삭제 후 재저장
+      const updates = {};
+      TOP_KEYS.forEach((key, i) => {
+        if (top[i]) {
+          const { key: _k, ...data } = top[i];
+          updates['energyGame/ranking/' + key] = data;
+        } else {
+          updates['energyGame/ranking/' + key] = null; // 없으면 삭제
+        }
+      });
+      await db.ref().update(updates);
+    }
+
+    // ─────────────────────────────────────────────
+    // 마이그레이션: push 방식 → top1/top2/top3
+    // top1이 없을 때 한 번만 실행
+    // ─────────────────────────────────────────────
+    async function migrateIfNeeded() {
+      try {
+        const top1Snap = await db.ref('energyGame/ranking/top1').once('value');
+        if (top1Snap.exists()) return; // 이미 마이그레이션 완료
+
+        // 기존 push 데이터 읽기
+        const snap = await rankRef.once('value');
+        if (!snap.exists()) return;
+
+        const pushData = [];
+        snap.forEach(child => {
+          const val = child.val();
+          // push 키는 '-'로 시작하고, top1/top2/top3는 아님
+          const k = child.key;
+          if (k !== 'top1' && k !== 'top2' && k !== 'top3') {
+            pushData.push(val);
+          }
+        });
+
+        if (pushData.length === 0) return;
+
+        // 소속+이름 기준 최고점만 남기기
+        const bestMap = {};
+        pushData.forEach(r => {
+          const id = (r.dept || '') + '||' + (r.name || '');
+          if (!bestMap[id] || r.score > bestMap[id].score) {
+            bestMap[id] = r;
+          }
+        });
+
+        const candidates = Object.values(bestMap).map(r => ({ ...r }));
+        await saveTop3(candidates);
+
+        // 기존 push 키 삭제
+        const delUpdates = {};
+        snap.forEach(child => {
+          const k = child.key;
+          if (k !== 'top1' && k !== 'top2' && k !== 'top3') {
+            delUpdates['energyGame/ranking/' + k] = null;
+          }
+        });
+        if (Object.keys(delUpdates).length > 0) {
+          await db.ref().update(delUpdates);
+        }
+        console.log('마이그레이션 완료');
+      } catch(e) {
+        console.error('마이그레이션 오류:', e);
+      }
+    }
+
+    // ─────────────────────────────────────────────
     // 랭킹 불러오기
+    // ─────────────────────────────────────────────
     async function loadRanking() {
       ['rankingResult','startRankingResult'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = '<div style="color:rgba(255,255,255,0.4);font-size:12px;padding:16px 0;text-align:center;">⏳ 불러오는 중...</div>';
       });
       try {
-        const snap = await rankRef.orderByChild('score').limitToLast(10).once('value');
-        if (!snap.exists()) {
-          window.rankingData = [];
-        } else {
-          const arr = [];
-          snap.forEach(child => arr.push(child.val()));
-          arr.sort((a, b) => b.score - a.score);
-          window.rankingData = arr.slice(0, 3);
-        }
+        const top3 = await fetchTop3();
+        window.rankingData = top3;
         window.updateRankingUI?.();
       } catch(e) {
         console.error('랭킹 로드 실패:', e);
@@ -255,13 +338,17 @@
       }
     }
 
+    // ─────────────────────────────────────────────
     // 점수 등록 시도
-    window.trySubmitScore = async function(score) {
-      await loadRanking(); // 최신 랭킹 갱신
+    // ─────────────────────────────────────────────
+    window.trySubmitScore = async function(newScore) {
+      await loadRanking();
       const ranking = window.rankingData || [];
-      const lowestScore = ranking.length > 0 ? ranking[ranking.length - 1].score : 0;
-      const isTop3 = ranking.length < 3 || score > lowestScore;
-      if (!isTop3) { window.updateRankingUI?.(); return; }
+
+      // 내 점수가 TOP3에 들어갈 수 있는지 확인
+      const lowestScore = ranking.length >= 3 ? ranking[ranking.length - 1].score : -Infinity;
+      const isTop3Eligible = ranking.length < 3 || newScore > lowestScore;
+      if (!isTop3Eligible) { window.updateRankingUI?.(); return; }
 
       // 팝업 표시
       const popup = document.getElementById('inputPopup');
@@ -272,18 +359,38 @@
 
       // 등록 버튼
       document.getElementById('submitScoreBtn').onclick = async () => {
-        const dept = document.getElementById('deptInput').value.trim() || '익명';
-        const name = document.getElementById('nameInput').value.trim() || '익명';
+        const dept = (document.getElementById('deptInput').value.trim() || '익명').slice(0, 12);
+        const name = (document.getElementById('nameInput').value.trim() || '익명').slice(0, 6);
         popup.classList.remove('show');
         try {
           const now = new Date();
-          await rankRef.push({
-            dept: dept.slice(0, 12),
-            name: name.slice(0, 6),
-            score: score,
+          const newEntry = {
+            dept, name,
+            score: newScore,
             date: now.toLocaleDateString('ko-KR'),
             datetime: now.toLocaleString('ko-KR')
-          });
+          };
+
+          // 최신 TOP3 다시 읽기
+          let top3 = await fetchTop3();
+
+          // ① 소속+이름 동일한 기록이 이미 있으면
+          const myId = dept + '||' + name;
+          const existIdx = top3.findIndex(r => (r.dept || '') + '||' + (r.name || '') === myId);
+
+          if (existIdx >= 0) {
+            // 기존 점수보다 높을 때만 교체
+            if (newScore > top3[existIdx].score) {
+              top3[existIdx] = { ...newEntry, key: top3[existIdx].key };
+              await saveTop3(top3);
+            }
+            // 낮거나 같으면 아무것도 안 함
+          } else {
+            // ② 새 사람: 후보에 추가해서 상위 3개만 유지
+            top3.push(newEntry);
+            await saveTop3(top3);
+          }
+
           await loadRanking();
         } catch(e) {
           console.log('저장 실패', e);
@@ -299,6 +406,9 @@
     };
 
     window.loadRanking = loadRanking;
+
+    // 앱 시작 시 마이그레이션 실행
+    migrateIfNeeded();
   </script>
 </head>
 <body>
