@@ -209,6 +209,24 @@
     cursor: pointer; margin-top: 16px;
     pointer-events: all; touch-action: manipulation;
   }
+
+  /* 카운트다운 오버레이 */
+  #countdownOverlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.45);
+    z-index: 500; pointer-events: none;
+  }
+  #countdownOverlay.show { display: flex; }
+  #countdownNum {
+    font-size: 96px; font-weight: 800; color: #fff;
+    text-shadow: 0 0 30px rgba(255,200,0,0.8), 0 4px 16px rgba(0,0,0,0.6);
+    animation: countPop 0.4s ease-out;
+  }
+  @keyframes countPop {
+    0% { transform: scale(1.6); opacity: 0.3; }
+    100% { transform: scale(1); opacity: 1; }
+  }
 </style>
 
   <!-- Firebase Compat SDK (WebSocket 통신, module import 불필요) -->
@@ -481,6 +499,10 @@
         <button id="skipScoreBtn">건너뛰기</button>
       </div>
     </div>
+    <!-- 카운트다운 오버레이 -->
+    <div id="countdownOverlay">
+      <div id="countdownNum">3</div>
+    </div>
   </div>
 </div>
 
@@ -686,22 +708,71 @@ document.getElementById('muteBtn').addEventListener('touchstart', function(e) { 
 
 function startGame() {
   score = 0; survivalTime = 0; energy = 100; frame = 0; speed = 3.5;
-  gameStartTime = performance.now();
   timeLeft = GAME_TIME; lastSecond = 0;
   obstacles = []; bonuses = []; particles = []; petals = [];
-  // 벚꽃 초기 생성
   for (let i = 0; i < 18; i++) spawnPetal(true);
   CHAR.y = CHAR.groundY; CHAR.vy = 0; CHAR.jumps = 0; CHAR.legPhase = 0;
   bgX = 0;
   earlyEnd = false;
   _lastLoopTime = 0;
-  state = 'playing';
+  obsTimer = 0; bonTimer = 0;
+
   document.getElementById('startScreen').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'none';
-  document.getElementById('hud').style.display = 'flex';
-  updateHUD();
-  startBGM();
-  requestAnimationFrame(loop);
+  document.getElementById('hud').style.display = 'none';
+
+  // 카운트다운 먼저
+  const overlay = document.getElementById('countdownOverlay');
+  const numEl = document.getElementById('countdownNum');
+  overlay.classList.add('show');
+
+  // 배경은 미리 그려두기
+  state = 'countdown';
+  bgX = 0;
+  requestAnimationFrame(function drawBg(ts) {
+    if (state !== 'countdown') return;
+    ctx.clearRect(0,0,W,H);
+    drawBackground();
+    drawGround();
+    drawCharacter();
+    petals.forEach(drawPetal);
+    requestAnimationFrame(drawBg);
+  });
+
+  let count = 3;
+  numEl.textContent = count;
+  // 애니메이션 재시작 트릭
+  numEl.style.animation = 'none';
+  void numEl.offsetWidth;
+  numEl.style.animation = '';
+
+  const tick = setInterval(() => {
+    count--;
+    if (count > 0) {
+      numEl.textContent = count;
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = '';
+    } else {
+      numEl.textContent = 'GO!';
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = '';
+      clearInterval(tick);
+      setTimeout(() => {
+        overlay.classList.remove('show');
+        // 실제 게임 시작
+        gameStartTime = performance.now();
+        obsTimer = 1.0;
+        bonTimer = 1.8;
+        state = 'playing';
+        document.getElementById('hud').style.display = 'flex';
+        updateHUD();
+        startBGM();
+        requestAnimationFrame(loop);
+      }, 700);
+    }
+  }, 900);
 }
 
 function updateHUD() {
@@ -710,6 +781,23 @@ function updateHUD() {
   document.getElementById('timerVal').textContent = sec;
   const tbox = document.getElementById('timerBox');
   tbox.className = sec <= 10 ? 'urgent' : '';
+
+  // 마지막 3초: 카운트다운 오버레이 재사용
+  const overlay = document.getElementById('countdownOverlay');
+  const numEl = document.getElementById('countdownNum');
+  if (state === 'playing' && sec <= 3 && sec >= 1) {
+    if (!overlay.classList.contains('show')) {
+      overlay.classList.add('show');
+    }
+    if (numEl.textContent !== String(sec)) {
+      numEl.textContent = sec;
+      numEl.style.animation = 'none';
+      void numEl.offsetWidth;
+      numEl.style.animation = '';
+    }
+  } else if (state === 'playing' && sec > 3) {
+    overlay.classList.remove('show');
+  }
 
   const pct = Math.max(0, energy);
   document.getElementById('energyFill').style.width = pct + '%';
@@ -1130,6 +1218,7 @@ function getFinalScore() {
 function gameOver(byTime) {
   state = 'over';
   stopBGM();
+  document.getElementById('countdownOverlay').classList.remove('show');
   earlyEnd = !byTime;
   document.getElementById('hud').style.display = 'none';
   document.getElementById('gameOverScreen').style.display = 'flex';
@@ -1176,6 +1265,8 @@ function drawStartBg(ts) {
 }
 
 let _lastLoopTime = 0;
+let obsTimer = 0;
+let bonTimer = 0;
 
 function loop(timestamp) {
   if (state !== 'playing') return;
@@ -1194,10 +1285,12 @@ function loop(timestamp) {
   // 속도 점진적 증가
   speed = 3.5 + (GAME_TIME - timeLeft) * 0.07;
 
-  // 스폰
-  const interval = Math.max(50, 110 - speed * 6);
-  if (frame % Math.floor(interval) === 0) spawnObstacle();
-  if (frame % Math.floor(interval * 1.4) === 0) spawnBonus();
+  // 스폰 (시간 기반 타이머 - fps 무관하게 동일한 빈도)
+  const spawnSec = Math.max(0.5, (110 - speed * 6) / 60); // 초 단위 간격
+  obsTimer -= (1/60) * dt;
+  bonTimer -= (1/60) * dt;
+  if (obsTimer <= 0) { spawnObstacle(); obsTimer = spawnSec; }
+  if (bonTimer <= 0) { spawnBonus(); bonTimer = spawnSec * 1.4; }
 
   // 물리 (dt 적용)
   CHAR.vy += 0.65 * dt;
